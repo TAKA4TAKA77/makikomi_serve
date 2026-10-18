@@ -17,8 +17,10 @@
       position: absolute;
       top: 12px;
       left: 12px;
-      width: 340px;
-      background: rgba(15, 23, 42, 0.88);
+      width: 350px;
+      max-height: calc(100vh - 24px);
+      overflow-y: auto;
+      background: rgba(15, 23, 42, 0.90);
       border: 1px solid #334155;
       border-radius: 12px;
       padding: 14px;
@@ -35,14 +37,14 @@
     .sub-desc {
       font-size: 11px;
       color: #94a3b8;
-      margin-bottom: 12px;
+      margin-bottom: 10px;
       line-height: 1.4;
     }
     .mode-btns {
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 6px;
-      margin-bottom: 12px;
+      margin-bottom: 10px;
     }
     button.mode-btn {
       background: #1e293b;
@@ -77,6 +79,24 @@
       border-radius: 4px;
       font-size: 11px;
       font-weight: bold;
+    }
+    .grip-adjust {
+      margin-top: 10px;
+      padding: 8px 10px;
+      background: #1e293b;
+      border-radius: 8px;
+      font-size: 11px;
+    }
+    .grip-adjust label {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 4px;
+      color: #cbd5e1;
+    }
+    .grip-adjust input[type="range"] {
+      width: 100%;
+      margin-bottom: 6px;
+      accent-color: #38bdf8;
     }
     .legend {
       margin-top: 10px;
@@ -115,11 +135,11 @@
 </head>
 <body>
 
-  <!-- 2D UIパネル（PC・スマホ確認＆Quest起動前設定用） -->
+  <!-- 2D UIパネル -->
   <div id="ui-panel">
     <h1>MAKIKOMI XR: Baseline Trainer</h1>
     <div class="sub-desc">
-      エンドライン平行の「横引っ張り（Layer 1）」×「手首落とし（Layer 2）」を視覚化・素振り診断するWebXRトレーナー
+      エンドライン平行の「横引っ張り（Layer 1）」×「手首落とし（Layer 2）」を視覚化・物理軌道シミュレーションするWebXRトレーナー
     </div>
 
     <div class="mode-btns">
@@ -132,6 +152,18 @@
     <div class="status-box" id="pc-status">
       <div>目標: <span id="lbl-mode" style="color:#38bdf8;font-weight:bold;">② 完成: 横上ロング</span></div>
       <div>診断: <span id="lbl-diag" class="badge" style="background:#065f46;color:#6ee7b7;">待機中 / デモ再生中</span></div>
+      <div>回転: <span id="lbl-rpm" style="color:#fef08a;font-weight:bold;">-- RPM</span></div>
+    </div>
+
+    <!-- グリップ角度の微調整UI -->
+    <div class="grip-adjust">
+      <div style="font-weight:bold;color:#38bdf8;margin-bottom:6px;">右コントローラー 握り角度調整 (VR内は右スティック)</div>
+      <label><span>ヘッド角度 (Pitch):</span><span id="val-pitch">38°</span></label>
+      <input type="range" id="slider-pitch" min="-20" max="80" value="38">
+      <label><span>面角度ひねり (Roll):</span><span id="val-roll">0°</span></label>
+      <input type="range" id="slider-roll" min="-60" max="60" value="0">
+      <label><span>左右向き (Yaw):</span><span id="val-yaw">-90°</span></label>
+      <input type="range" id="slider-yaw" min="-150" max="-30" value="-90">
     </div>
 
     <div class="legend">
@@ -141,11 +173,12 @@
     </div>
 
     <div class="controls-hint">
-      <b>【Meta Quest 3S 操作方法】</b><br>
+      <b>【Meta Quest 3 / 3S 操作方法（右手コントローラー）】</b><br>
       ・画面下の <b>START AR / VR</b> で開始<br>
-      ・<b>Aボタン / トリガー</b>：目の前にエンドライン(白線)を再配置<br>
+      ・<b>Aボタン / 右トリガー</b>：目の前にエンドライン(白線)を再配置<br>
       ・<b>Bボタン</b>：練習モード(①〜④)の切り替え<br>
-      ・ガラス壁に沿って右から左へスイングしてインパクト！
+      ・<b>右スティック上下・左右</b>：握りの角度・面角度の微調整<br>
+      ・ボールをこすると回転軸・回転速度・飛球軌道がリアルタイムに変化します！
     </div>
   </div>
 
@@ -157,7 +190,7 @@
     // --- 1. シーン・カメラ・レンダラー初期化 ---
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.05, 30);
-    camera.position.set(0.15, 1.35, 0.65);
+    camera.position.set(0.15, 1.38, 0.68);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -165,53 +198,61 @@
     renderer.xr.enabled = true;
     document.body.appendChild(renderer.domElement);
 
-    // Quest 3S パススルー(AR)優先ボタン（非対応環境ではVRまたは3D表示）
     document.body.appendChild(XRButton.createButton(renderer, {
       optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking']
     }));
 
     const controls = new OrbitControls(camera, renderer.domElement);
-    controls.target.set(0, 0.82, -0.3);
+    controls.target.set(0, 0.82, -0.4);
     controls.update();
 
     // 照明
-    scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+    scene.add(new THREE.AmbientLight(0xffffff, 0.85));
     const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
     dirLight.position.set(1, 3, 2);
     scene.add(dirLight);
 
     // --- 2. ワークスペース（リセンター可能な基準グループ） ---
-    // エンドライン中央の高さ(y=0.76m)、z=0 を基準とする
     const stage = new THREE.Group();
     scene.add(stage);
 
     // 卓球台（実寸: 幅1.525m, 奥行2.74m, 高さ0.76m）
-    // エンドライン手前を z = 0 に配置し、奥へ向かって z = -2.74m とする
     const tableGroup = new THREE.Group();
     stage.add(tableGroup);
 
     const tableGeo = new THREE.BoxGeometry(1.525, 0.03, 2.74);
     const tableMat = new THREE.MeshStandardMaterial({
       color: 0x0f2942,
-      roughness: 0.7,
+      roughness: 0.65,
       transparent: true,
-      opacity: 0.82
+      opacity: 0.85
     });
     const tableMesh = new THREE.Mesh(tableGeo, tableMat);
     tableMesh.position.set(0, 0.76 - 0.015, -1.37);
     tableGroup.add(tableMesh);
 
-    // エンドライン（白線：ここに沿って腕を出す基準線）
-    const endlineGeo = new THREE.BoxGeometry(1.525, 0.032, 0.025);
     const whiteMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-    const endlineMesh = new THREE.Mesh(endlineGeo, whiteMat);
-    endlineMesh.position.set(0, 0.76 - 0.015, -0.0125);
-    tableGroup.add(endlineMesh);
+    // エンドライン（手前 z=0 と 奥 z=-2.74）
+    const endlineFront = new THREE.Mesh(new THREE.BoxGeometry(1.525, 0.032, 0.025), whiteMat);
+    endlineFront.position.set(0, 0.76 - 0.015, -0.0125);
+    tableGroup.add(endlineFront);
+
+    const endlineBack = new THREE.Mesh(new THREE.BoxGeometry(1.525, 0.032, 0.025), whiteMat);
+    endlineBack.position.set(0, 0.76 - 0.015, -2.74 + 0.0125);
+    tableGroup.add(endlineBack);
 
     // センターライン＆サイドライン
     const centerLine = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.032, 2.74), whiteMat);
     centerLine.position.set(0, 0.76 - 0.015, -1.37);
     tableGroup.add(centerLine);
+
+    const sideLineL = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.032, 2.74), whiteMat);
+    sideLineL.position.set(-1.525 / 2 + 0.01, 0.76 - 0.015, -1.37);
+    tableGroup.add(sideLineL);
+
+    const sideLineR = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.032, 2.74), whiteMat);
+    sideLineR.position.set(1.525 / 2 - 0.01, 0.76 - 0.015, -1.37);
+    tableGroup.add(sideLineR);
 
     // ネット（z = -1.37m, 高さ0.1525m）
     const netGeo = new THREE.PlaneGeometry(1.83, 0.1525);
@@ -223,7 +264,7 @@
       wireframe: true
     });
     const netMesh = new THREE.Mesh(netGeo, netMat);
-    netMesh.position.set(0, 0.76 + 0.076, -1.37);
+    netMesh.position.set(0, 0.76 + 0.07625, -1.37);
     tableGroup.add(netMesh);
 
     // --- 3. ギミック①：エンドライン・ガラスウォール（XY基準平面） ---
@@ -246,16 +287,15 @@
 
     // インパクト・ターゲットリング（打球点：x=0.05, y=0.95, z=0）
     const impactPos = new THREE.Vector3(0.05, 0.95, 0);
-    const ringGeo = new THREE.RingGeometry(0.055, 0.065, 32);
+    const ringGeo = new THREE.RingGeometry(0.055, 0.068, 32);
     const ringMat = new THREE.MeshBasicMaterial({ color: 0x22c55e, side: THREE.DoubleSide });
     const targetRing = new THREE.Mesh(ringGeo, ringMat);
     targetRing.position.copy(impactPos);
     stage.add(targetRing);
 
-    // 2階層ガイドレール（お手本ライン：青＝グリップ水平、水色＝先端落下）
+    // 2階層ガイドレール
     const guideGroup = new THREE.Group();
     stage.add(guideGroup);
-    let gripGuideLine, tipGuideLine;
 
     function updateGuideRails(mode) {
       while (guideGroup.children.length > 0) {
@@ -264,38 +304,38 @@
       const gripPts = [];
       const tipPts = [];
       for (let i = 0; i <= 20; i++) {
-        const t = i / 20; // 0(右始動) -> 1(左振り抜き)
+        const t = i / 20;
         const x = 0.30 - t * 0.50;
         let gy = 0.97, gz = 0;
         let ty = 0.97, tz = 0;
 
-        if (mode === 1) { // ① 基礎: 水平横引き
+        if (mode === 1) {
           gy = 0.95; ty = 0.95;
-        } else if (mode === 2) { // ② 完成: 横上ロング（腕は水平＋手首で先端落とし）
+        } else if (mode === 2) {
           gy = 0.98 - t * 0.04;
           ty = 1.08 - t * 0.26;
-        } else if (mode === 3) { // ③ 完成: 同軌道・横下（横移動少なめ＋縦落とし）
+        } else if (mode === 3) {
           const xShort = 0.14 - t * 0.18;
           gripPts.push(new THREE.Vector3(xShort, 1.00 - t * 0.08, 0));
           tipPts.push(new THREE.Vector3(xShort - 0.05, 1.08 - t * 0.26, 0));
           continue;
-        } else if (mode === 4) { // ④ NG: 前に押す＆面開き
+        } else if (mode === 4) {
           gy = 0.98 - t * 0.10;
           ty = 1.04 - t * 0.18;
-          gz = -t * 0.22; // エンドライン壁を前に突き破る
+          gz = -t * 0.22;
           tz = -t * 0.28;
         }
         gripPts.push(new THREE.Vector3(x, gy, gz));
         tipPts.push(new THREE.Vector3(x - 0.06, ty, tz));
       }
 
-      gripGuideLine = new THREE.Line(
+      const gripGuideLine = new THREE.Line(
         new THREE.BufferGeometry().setFromPoints(gripPts),
         new THREE.LineDashedMaterial({ color: 0x3b82f6, dashSize: 0.02, gapSize: 0.01 })
       );
       gripGuideLine.computeLineDistances();
 
-      tipGuideLine = new THREE.Line(
+      const tipGuideLine = new THREE.Line(
         new THREE.BufferGeometry().setFromPoints(tipPts),
         new THREE.LineDashedMaterial({ color: 0x06b6d4, dashSize: 0.02, gapSize: 0.01 })
       );
@@ -306,117 +346,316 @@
 
     // --- 4. 空間フローティングHUD（CanvasTexture） ---
     const hudCanvas = document.createElement('canvas');
-    hudCanvas.width = 640;
-    hudCanvas.height = 360;
+    hudCanvas.width = 680;
+    hudCanvas.height = 380;
     const hudCtx = hudCanvas.getContext('2d');
     const hudTex = new THREE.CanvasTexture(hudCanvas);
 
     const hudMesh = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.72, 0.405),
+      new THREE.PlaneGeometry(0.76, 0.425),
       new THREE.MeshBasicMaterial({ map: hudTex, transparent: true })
     );
-    hudMesh.position.set(0, 1.42, -0.35);
+    hudMesh.position.set(0, 1.44, -0.35);
     stage.add(hudMesh);
 
     function drawHUD(data) {
       hudCtx.fillStyle = 'rgba(15, 23, 42, 0.92)';
-      hudCtx.fillRect(0, 0, 640, 360);
+      hudCtx.fillRect(0, 0, 680, 380);
       hudCtx.strokeStyle = data.alertColor || '#38bdf8';
       hudCtx.lineWidth = 6;
-      hudCtx.strokeRect(3, 3, 634, 354);
+      hudCtx.strokeRect(3, 3, 674, 374);
 
-      // タイトル＆モード
       hudCtx.fillStyle = '#38bdf8';
-      hudCtx.font = 'bold 24px sans-serif';
-      hudCtx.fillText(`MODE: ${data.modeTitle}`, 24, 40);
+      hudCtx.font = 'bold 22px sans-serif';
+      hudCtx.fillText(`MODE: ${data.modeTitle}`, 24, 38);
 
-      // 判定結果バッジ
       hudCtx.fillStyle = data.alertColor || '#22c55e';
-      hudCtx.font = 'bold 28px sans-serif';
-      hudCtx.fillText(data.verdict, 24, 82);
+      hudCtx.font = 'bold 26px sans-serif';
+      hudCtx.fillText(data.verdict, 24, 78);
 
-      // ベクトルメーター
       hudCtx.fillStyle = '#e2e8f0';
-      hudCtx.font = '20px sans-serif';
-      hudCtx.fillText(`Layer 1 横引っ張り速度 (Vx): ${data.vx.toFixed(2)} m/s`, 24, 130);
-      hudCtx.fillText(`Layer 2 先端縦落とし速度 (Vy): ${data.vy.toFixed(2)} m/s`, 24, 165);
-      hudCtx.fillText(`前後ブレ速度 (Vz・前押し検知): ${data.vz.toFixed(2)} m/s`, 24, 200);
-      hudCtx.fillText(`インパクト面角度 (目標 90°垂直): ${data.angle.toFixed(0)}°`, 24, 235);
+      hudCtx.font = '19px sans-serif';
+      hudCtx.fillText(`Layer 1 横引っ張り速度 (Vx): ${data.vx.toFixed(2)} m/s`, 24, 122);
+      hudCtx.fillText(`Layer 2 先端縦落とし速度 (Vy): ${data.vy.toFixed(2)} m/s`, 24, 154);
+      hudCtx.fillText(`前後押し込み速度 (Vz): ${data.vz.toFixed(2)} m/s`, 24, 186);
+      hudCtx.fillText(`インパクト面角度 (目標 90°垂直): ${data.angle.toFixed(0)}°`, 24, 218);
 
-      // 回転＆アドバイス
       hudCtx.fillStyle = '#fef08a';
       hudCtx.font = 'bold 21px sans-serif';
-      hudCtx.fillText(`発生スピン: ${data.spinType}`, 24, 285);
+      hudCtx.fillText(`発生スピン: ${data.spinType} [約 ${Math.round(data.rpm)} RPM]`, 24, 265);
 
       hudCtx.fillStyle = '#cbd5e1';
       hudCtx.font = '18px sans-serif';
-      hudCtx.fillText(data.advice, 24, 325);
+      hudCtx.fillText(data.advice, 24, 305);
+
+      hudCtx.fillStyle = '#94a3b8';
+      hudCtx.font = '15px sans-serif';
+      hudCtx.fillText(`握り補正 Pitch:${gripConfig.pitch.toFixed(0)}° Roll:${gripConfig.roll.toFixed(0)}° (右スティックで調整可)`, 24, 348);
 
       hudTex.needsUpdate = true;
 
-      // PC側のUIラベルも連動更新
       document.getElementById('lbl-mode').textContent = data.modeTitle;
       const diagEl = document.getElementById('lbl-diag');
       diagEl.textContent = `${data.verdict} (${data.spinType})`;
       diagEl.style.background = data.alertColor === '#ef4444' ? '#7f1d1d' : '#065f46';
       diagEl.style.color = data.alertColor === '#ef4444' ? '#fca5a5' : '#6ee7b7';
+      document.getElementById('lbl-rpm').textContent = `${Math.round(data.rpm)} RPM`;
     }
 
-    // --- 5. 仮想ラケット＆法線レーザー＆回転軸ボール ---
+    // --- 5. 仮想ラケット（表裏ラバー・グリップ構造）＆法線レーザー ---
+    // racketGroupのローカル定義：
+    // 原点(0,0,0) = グリップ位置、先端方向 = ローカル -X、打球面法線 = ローカル -Z（赤ラバー） / +Z（黒ラバー）
     const racketGroup = new THREE.Group();
     stage.add(racketGroup);
 
-    // グリップ（原点 = (0,0,0)）
+    // グリップ（柄）
     const gripMesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.015, 0.015, 0.10, 16),
-      new THREE.MeshStandardMaterial({ color: 0xb45309 })
+      new THREE.CylinderGeometry(0.014, 0.017, 0.105, 16),
+      new THREE.MeshStandardMaterial({ color: 0xb45309, roughness: 0.8 })
     );
     gripMesh.rotation.z = Math.PI / 2;
+    gripMesh.position.set(0.02, 0, 0);
     racketGroup.add(gripMesh);
 
-    // ブレード（先端がローカル -X 方向へ伸び、面法線がローカル -Z を向く設計）
-    const bladeMesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.08, 0.08, 0.01, 32),
-      new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.4 })
+    // ブレード本体（木枠）
+    const bladeWood = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.078, 0.078, 0.006, 32),
+      new THREE.MeshStandardMaterial({ color: 0xfde68a })
     );
-    bladeMesh.rotation.x = Math.PI / 2;
-    bladeMesh.position.set(-0.13, 0, 0); // グリップから13cm先がブレード中心、先端は-0.18m
-    racketGroup.add(bladeMesh);
+    bladeWood.rotation.x = Math.PI / 2;
+    bladeWood.position.set(-0.115, 0, 0);
+    racketGroup.add(bladeWood);
 
-    // ギミック②：面法線レーザー（面が90°垂直のとき水平に伸びる）
+    // フォア面（赤ラバー：ローカル -Z 側）
+    const rubberRed = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.076, 0.076, 0.003, 32),
+      new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.35 })
+    );
+    rubberRed.rotation.x = Math.PI / 2;
+    rubberRed.position.set(-0.115, 0, -0.004);
+    racketGroup.add(rubberRed);
+
+    // バック面（黒ラバー：ローカル +Z 側）
+    const rubberBlack = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.076, 0.076, 0.003, 32),
+      new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.35 })
+    );
+    rubberBlack.rotation.x = Math.PI / 2;
+    rubberBlack.position.set(-0.115, 0, 0.004);
+    racketGroup.add(rubberBlack);
+
+    // 面法線レーザー（両面対応で打球方向へ伸びる）
     const laserGeo = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(-0.13, 0, 0),
-      new THREE.Vector3(-0.13, 0, -0.22)
+      new THREE.Vector3(-0.115, 0, -0.22),
+      new THREE.Vector3(-0.115, 0, 0.22)
     ]);
     const laserMat = new THREE.LineBasicMaterial({ color: 0x22c55e, linewidth: 3 });
     const normalLaser = new THREE.Line(laserGeo, laserMat);
     racketGroup.add(normalLaser);
 
-    // 回転可視化用ツートンボール＆マゼンタ回転軸ロッド
+    // --- 6. 回転可視化ツートンボール（インパクト待機球 ＆ 飛球アニメーション球） ---
+    function createSpinBallMesh(radius = 0.02) {
+      const group = new THREE.Group();
+      const hemi1 = new THREE.Mesh(
+        new THREE.SphereGeometry(radius, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2),
+        new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 })
+      );
+      const hemi2 = new THREE.Mesh(
+        new THREE.SphereGeometry(radius, 24, 12, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2),
+        new THREE.MeshStandardMaterial({ color: 0xf97316, roughness: 0.3 })
+      );
+      // 回転がより見やすい赤道帯リング
+      const seam = new THREE.Mesh(
+        new THREE.CylinderGeometry(radius * 1.01, radius * 1.01, radius * 0.12, 24),
+        new THREE.MeshBasicMaterial({ color: 0x0f172a })
+      );
+      group.add(hemi1, hemi2, seam);
+      return group;
+    }
+
+    // (A) インパクト位置のスピンインジケーター球
     const ballGroup = new THREE.Group();
     ballGroup.position.copy(impactPos);
     stage.add(ballGroup);
 
-    const ballMesh = new THREE.Group();
-    const hemi1 = new THREE.Mesh(
-      new THREE.SphereGeometry(0.02, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2),
-      new THREE.MeshStandardMaterial({ color: 0xffffff })
-    );
-    const hemi2 = new THREE.Mesh(
-      new THREE.SphereGeometry(0.02, 24, 12, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2),
-      new THREE.MeshStandardMaterial({ color: 0xf97316 })
-    );
-    ballMesh.add(hemi1, hemi2);
+    const ballMesh = createSpinBallMesh(0.021);
     ballGroup.add(ballMesh);
 
-    // 回転軸ロッド
+    // マゼンタ回転軸ロッド（ballGroupのローカルY軸を現在のスピン軸方向に向ける）
     const axisRod = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.0025, 0.0025, 0.14, 8),
+      new THREE.CylinderGeometry(0.0025, 0.0025, 0.16, 12),
       new THREE.MeshBasicMaterial({ color: 0xec4899 })
     );
     ballGroup.add(axisRod);
 
-    // --- 6. ギミック③＆④：2軸軌跡リボンとバウンド軌道ライン ---
+    // (B) 打球後に実際に回転しながら飛んでいくボール
+    const flyingBallGroup = new THREE.Group();
+    flyingBallGroup.position.copy(impactPos);
+    stage.add(flyingBallGroup);
+    const flyingBallMesh = createSpinBallMesh(0.02);
+    flyingBallGroup.add(flyingBallMesh);
+
+    // --- 7. スピン物理状態 ＆ リアル飛球軌道シミュレーション ---
+    const currentSpinAxis = new THREE.Vector3(0, 1, 0).normalize();
+    let currentSpinOmega = 18; // 角速度 [rad/s]
+    let trajectorySamples = []; // 飛球軌道のサンプル点配列 [{ pos, t }]
+    let flightTimer = 0;
+    let isBallFlying = false;
+
+    let ballPathLine = null;
+    const bounceMarkers = new THREE.Group();
+    stage.add(bounceMarkers);
+
+    // 回転軸ロッドとボール姿勢を最新のスピン軸に合わせる関数
+    function updateSpinAxisVisual(axisVec, omega) {
+      currentSpinAxis.copy(axisVec).normalize();
+      currentSpinOmega = omega;
+      // デフォルトY軸(0,1,0)をcurrentSpinAxisに向けるクォータニオン
+      const alignQuat = new THREE.Quaternion().setFromUnitVectors(
+        new THREE.Vector3(0, 1, 0),
+        currentSpinAxis
+      );
+      axisRod.quaternion.copy(alignQuat);
+    }
+
+    /**
+     * 物理ベースの飛球・バウンド軌道生成
+     * @param {number} vx 横引っ張り速度 (m/s, 右→左が正)
+     * @param {number} vy 先端縦落とし速度 (m/s, 上→下が正)
+     * @param {number} vz 前後押し出し速度 (m/s)
+     * @param {number} bladeAngleDeg 面の垂直度 (90°=垂直, 小さいほど上向き面開き)
+     * @param {string} spinKind 診断カテゴリ
+     */
+    function simulateAndDrawTrajectory(vx, vy, vz, bladeAngleDeg, spinKind) {
+      if (ballPathLine) stage.remove(ballPathLine);
+      while (bounceMarkers.children.length > 0) {
+        bounceMarkers.remove(bounceMarkers.children[0]);
+      }
+
+      const openRatio = Math.max(0, (90 - bladeAngleDeg) / 45); // 0(垂直) 〜 1(45°面開き)
+
+      // --- 1. 3次元スピンベクトル ω = (ωx: 上下回転, ωy: 横回転, ωz: ジャイロ成分) [rad/s] ---
+      // ωy > 0 で右方向(+X)へ曲がる逆横〜巻き込み系サイドスピン
+      const sideSpin = vx * 52;
+
+      // ωx: 正＝トップスピン（空中で沈み、バウンドで前に伸びる）、負＝バックスピン（バウンドで止まる）
+      let topSpin = 0;
+      if (openRatio > 0.32 || (vx < 0.95 && vy >= 1.0)) {
+        // 面が開いている、または横引きを抜いて縦に切った場合はバックスピン（下回転）
+        topSpin = -vy * (32 + openRatio * 35);
+      } else {
+        // 面を立てて横に強く引きながら手首を落とした場合はトップスピン〜横上回転
+        topSpin = (vx * 18 + vy * 24) * (1 - openRatio * 1.2);
+      }
+
+      const gyroSpin = (vx * 12) * (openRatio - 0.2);
+
+      // 合成スピンベクトルとRPM算出
+      const spinVec = new THREE.Vector3(topSpin, sideSpin, gyroSpin);
+      const totalOmega = Math.max(8, spinVec.length());
+      const rpm = (totalOmega * 60) / (2 * Math.PI);
+
+      // 回転軸を可視化ロッドに反映
+      if (spinVec.lengthSq() > 0.01) {
+        updateSpinAxisVisual(spinVec, Math.min(95, 12 + totalOmega * 0.45));
+      }
+
+      // --- 2. 初速度ベクトル V0 の決定 ---
+      // 前進速度 Vz0 (奥 -Z 方向が負)
+      let forwardSpeed = 2.65 + vz * 1.05 + Math.max(0, topSpin) * 0.008;
+      if (topSpin < -15) {
+        // 横下サーブ（引き算）は前に飛ばす力を抑えて台上で短くバウンドさせる
+        forwardSpeed = Math.max(1.75, 2.15 - Math.abs(topSpin) * 0.005 + vz * 0.7);
+      }
+
+      // 打ち出し上下速度 Vy0（自コートにバウンドさせるため下向き初速）
+      const vy0 = -0.95 + openRatio * 0.55 + Math.min(0.4, vz * 0.25);
+      // 打ち出し左右速度 Vx0（少し左へ打ち出してから右へ曲がる）
+      const vx0 = -0.12 - Math.min(0.18, vx * 0.05);
+
+      const pos = impactPos.clone();
+      const vel = new THREE.Vector3(vx0, vy0, -forwardSpeed);
+
+      trajectorySamples = [];
+      const pts = [];
+      const simDt = 0.008;
+      const tableY = 0.76 + 0.02; // 台面 + ボール半径
+      let simTime = 0;
+      let bounceCount = 0;
+
+      for (let step = 0; step < 190; step++) {
+        pts.push(pos.clone());
+        trajectorySamples.push({ pos: pos.clone(), t: simTime });
+
+        // 重力加速度
+        const acc = new THREE.Vector3(0, -9.8, 0);
+
+        // 空気抵抗
+        acc.addScaledVector(vel, -0.35);
+
+        // マグヌス効果 (F_magnus ∝ ω × v)
+        // 横回転(sideSpin)による +X 方向へのカーブ
+        acc.x += sideSpin * (-vel.z) * 0.011;
+        // トップスピン(topSpin > 0)による沈み込み / バックスピン(topSpin < 0)による浮き
+        acc.y += -topSpin * (-vel.z) * 0.0065;
+
+        vel.addScaledVector(acc, simDt);
+        pos.addScaledVector(vel, simDt);
+        simTime += simDt;
+
+        // 卓球台上のバウンド判定（台の幅・奥行きの範囲内）
+        if (pos.y <= tableY && vel.y < 0 && pos.z <= 0.05 && pos.z >= -2.78 && Math.abs(pos.x) <= 0.78) {
+          pos.y = tableY;
+          vel.y = -vel.y * 0.78; // 反発係数
+          bounceCount++;
+
+          // バウンド時のスピン摩擦による加減速＆横キック
+          if (topSpin >= 0) {
+            // 横上スピン：バウンド後に前へ鋭く伸びて低く弾む
+            vel.z -= topSpin * 0.010;
+            vel.y *= 0.88;
+          } else {
+            // 横下スピン：バウンド時に摩擦で前進ブレーキがかかり減速する
+            vel.z *= Math.max(0.48, 0.78 - Math.abs(topSpin) * 0.003);
+          }
+          // 横回転によるバウンド時の横変化キック
+          vel.x += sideSpin * 0.0055;
+
+          // バウンド後のスピン減衰
+          topSpin *= 0.75;
+
+          // バウンド地点にリングマーカーを配置
+          const bMarker = new THREE.Mesh(
+            new THREE.RingGeometry(0.018, 0.032, 24),
+            new THREE.MeshBasicMaterial({
+              color: bounceCount === 1 ? 0x38bdf8 : 0xfef08a,
+              side: THREE.DoubleSide
+            })
+          );
+          bMarker.rotation.x = -Math.PI / 2;
+          bMarker.position.set(pos.x, 0.762, pos.z);
+          bounceMarkers.add(bMarker);
+        }
+
+        // 台の奥または床まで落ちたら終了
+        if (pos.z < -3.3 || pos.y < 0.3) break;
+      }
+
+      const colorMap = { top: 0xec4899, under: 0x38bdf8, pure_side: 0x22c55e, push_err: 0xef4444 };
+      ballPathLine = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints(pts),
+        new THREE.LineBasicMaterial({ color: colorMap[spinKind] || 0xffffff, linewidth: 3 })
+      );
+      stage.add(ballPathLine);
+
+      // 飛球アニメーション開始
+      flightTimer = 0;
+      isBallFlying = true;
+
+      return rpm;
+    }
+
+    // --- 8. 2軸軌跡リボン ---
     const MAX_TRAIL = 35;
     const gripTrailPts = Array.from({ length: MAX_TRAIL }, () => new THREE.Vector3());
     const tipTrailPts = Array.from({ length: MAX_TRAIL }, () => new THREE.Vector3());
@@ -431,51 +670,7 @@
     );
     stage.add(gripTrailLine, tipTrailLine);
 
-    // 打球後の卓球台上バウンド軌道ライン
-    let ballPathLine = null;
-    function drawBallTrajectory(spinKind) {
-      if (ballPathLine) stage.remove(ballPathLine);
-      const pts = [];
-      for (let i = 0; i <= 40; i++) {
-        const s = i / 40;
-        const z = -s * 2.75; // エンドライン(0)から相手コート奥(-2.75m)へ
-        let x = 0.05;
-        let y = 0.95;
-
-        // 逆横回転による右方向（+X）へのカーブ
-        const curveX = (spinKind === 'top' || spinKind === 'pure_side') ? (s * s * 0.28) : (s * s * 0.10);
-        x += curveX;
-
-        // 第1バウンド(s=0.22付近) と 第2バウンド(s=0.72付近)
-        if (s < 0.22) {
-          const u = s / 0.22;
-          y = 0.95 * (1 - u) + 0.76 * u;
-        } else if (s < 0.72) {
-          const u = (s - 0.22) / 0.50;
-          const arcH = spinKind === 'push_err' ? 0.26 : 0.18;
-          y = 0.76 + Math.sin(u * Math.PI) * arcH;
-        } else {
-          const u = (s - 0.72) / 0.28;
-          // 横上ロングは第2バウンド後に低く鋭く伸び、横下は減速して沈む
-          if (spinKind === 'top') {
-            y = 0.76 + Math.sin(u * Math.PI * 0.65) * 0.11;
-          } else if (spinKind === 'under') {
-            y = 0.76 + Math.sin(u * Math.PI * 0.85) * 0.09;
-          } else {
-            y = 0.76 + Math.sin(u * Math.PI * 0.7) * 0.20;
-          }
-        }
-        pts.push(new THREE.Vector3(x, y, z));
-      }
-      const colorMap = { top: 0xec4899, under: 0x38bdf8, pure_side: 0x22c55e, push_err: 0xef4444 };
-      ballPathLine = new THREE.Line(
-        new THREE.BufferGeometry().setFromPoints(pts),
-        new THREE.LineBasicMaterial({ color: colorMap[spinKind] || 0xffffff, linewidth: 3 })
-      );
-      stage.add(ballPathLine);
-    }
-
-    // --- 7. モード管理＆診断ロジック ---
+    // --- 9. モード管理＆診断ロジック ---
     let currentMode = 2;
     const modeNames = {
       1: '① 基礎: クリーン水平引き (Layer 1のみ)',
@@ -484,6 +679,8 @@
       4: '④ NG例: 前押し棒球＆面開きエラー'
     };
 
+    let lastEvalData = null;
+
     function evaluateSwing(vx, vy, vz, bladeAngleDeg, controllerGamepad) {
       let verdict = 'GOOD SWING';
       let spinType = '横上スピン（バウンド後に伸びる）';
@@ -491,44 +688,35 @@
       let alertColor = '#22c55e';
       let trajKind = 'top';
 
-      // エラー1: 前に押し出している（ガラス壁突破）
-      if (vz > 0.75) {
+      if (vz > 0.78) {
         verdict = 'WARNING: 前に振っています（ガラス壁突破）';
         spinType = '回転不足の押し球ロング';
         advice = '前に押さず、エンドライン(白線)と平行に真横へ引いてください';
         alertColor = '#ef4444';
         trajKind = 'push_err';
         glassMat.color.setHex(0xef4444);
-      }
-      // エラー2: 面が上を向いている（面開きトラップ）
-      else if (bladeAngleDeg < 76) {
+      } else if (bladeAngleDeg < 74) {
         verdict = 'WARNING: 面が上を向いています（面開き）';
         spinType = '意図しない横下回転';
         advice = '真後ろを捉えるには、ラケット面を90°垂直に立ててください';
         alertColor = '#eab308';
         trajKind = 'under';
         glassMat.color.setHex(0xeab308);
-      }
-      // エラー3: 横上モードなのに横引き(Layer 1)不足＝ただの押し球
-      else if (currentMode === 2 && vx < 1.1) {
+      } else if (currentMode === 2 && vx < 1.05) {
         verdict = 'TRAP検知: Layer 1（横引っ張り）不足！';
-        spinType = 'ただ押すだけの棒球ロング';
+        spinType = '回転の弱い棒球ロング';
         advice = '手首を落とすだけでなく、白線に沿って強く真横に引っ張ってください';
         alertColor = '#ef4444';
         trajKind = 'push_err';
         glassMat.color.setHex(0xef4444);
-      }
-      // モード3（横下）の成功判定
-      else if (vx < 0.9 && vy >= 1.2) {
+      } else if (vx < 0.95 && vy >= 1.1) {
         verdict = 'EXCELLENT: 同フォーム横下（引き算成功）';
         spinType = '下ナックル〜横下スピン（台上で止まる）';
         advice = '面を立てたまま横引きを抜き、手首の縦落としだけで切れています！';
         alertColor = '#38bdf8';
         trajKind = 'under';
         glassMat.color.setHex(0x06b6d4);
-      }
-      // モード1（基礎クリーン）
-      else if (vy < 0.7 && vx >= 1.2) {
+      } else if (vy < 0.75 && vx >= 1.15) {
         verdict = 'CLEAN: Layer 1 基礎水平スピン';
         spinType = '純逆横〜横上スピン';
         advice = '綺麗な水平引っ張りです。これに手首の縦落としを重ねると完成です';
@@ -540,30 +728,28 @@
         glassMat.color.setHex(0x06b6d4);
       }
 
-      // 回転軸ロッドの傾き更新
-      if (trajKind === 'top') {
-        axisRod.rotation.z = -0.55; // 横上傾斜
-      } else if (trajKind === 'under') {
-        axisRod.rotation.z = 1.15;  // 横下（水平寄り）
-      } else {
-        axisRod.rotation.z = -0.15; // 純横（垂直寄り）
-      }
+      // 物理シミュレーション軌道＆ボール回転の更新
+      const rpm = simulateAndDrawTrajectory(vx, vy, vz, bladeAngleDeg, trajKind);
 
-      drawBallTrajectory(trajKind);
-      drawHUD({
+      lastEvalData = {
         modeTitle: modeNames[currentMode],
         verdict,
         vx, vy, vz,
         angle: bladeAngleDeg,
         spinType,
+        rpm,
         advice,
         alertColor
-      });
+      };
+      drawHUD(lastEvalData);
 
-      // Questコントローラーのハプティクス（振動）フィードバック
+      // インパクトリングの発光演出
+      ringMat.color.set(alertColor);
+
+      // Questコントローラーのハプティクス振動
       if (controllerGamepad && controllerGamepad.hapticActuators && controllerGamepad.hapticActuators[0]) {
-        const intensity = Math.min(1.0, (vx + vy) / 3.5);
-        controllerGamepad.hapticActuators[0].pulse(intensity, alertColor === '#ef4444' ? 180 : 60);
+        const intensity = Math.min(1.0, (vx + vy) / 3.2);
+        controllerGamepad.hapticActuators[0].pulse(intensity, alertColor === '#ef4444' ? 180 : 70);
       }
     }
 
@@ -574,12 +760,11 @@
       });
       updateGuideRails(m);
 
-      // デモ初期値の評価表示
       const demoPresets = {
-        1: { vx: 2.1, vy: 0.2, vz: 0.1, angle: 90 },
-        2: { vx: 2.2, vy: 1.8, vz: 0.1, angle: 90 },
-        3: { vx: 0.4, vy: 1.9, vz: 0.1, angle: 86 },
-        4: { vx: 0.6, vy: 1.2, vz: 1.4, angle: 64 }
+        1: { vx: 2.1, vy: 0.25, vz: 0.1, angle: 90 },
+        2: { vx: 2.3, vy: 1.85, vz: 0.1, angle: 90 },
+        3: { vx: 0.4, vy: 1.95, vz: 0.08, angle: 86 },
+        4: { vx: 0.6, vy: 1.2, vz: 1.45, angle: 62 }
       };
       const p = demoPresets[m];
       evaluateSwing(p.vx, p.vy, p.vz, p.angle, null);
@@ -589,9 +774,75 @@
       btn.addEventListener('click', () => setMode(Number(btn.dataset.mode)));
     });
 
-    // --- 8. WebXRコントローラー制御＆リセンター機能 ---
-    const controller = renderer.xr.getController(0);
-    scene.add(controller);
+    // --- 10. 右コントローラー特定 ＆ グリップ角度補正 ---
+    // Quest 3の右コントローラーを自然に握った際、コントローラーのグリップ軸とラケットの柄が一致する初期設定
+    const gripConfig = {
+      pitch: 38, // コントローラーのピストル角補正（度）
+      roll: 0,   // 面角度のひねり補正（度）
+      yaw: -90   // コントローラー前方(-Z)へラケット先端(-X)を向ける基準角（度）
+    };
+
+    const gripOffsetQuat = new THREE.Quaternion();
+    function updateGripOffsetQuat() {
+      // コントローラー座標系からラケット座標系への変換オイラー角 (YXZ順)
+      const euler = new THREE.Euler(
+        THREE.MathUtils.degToRad(gripConfig.pitch),
+        THREE.MathUtils.degToRad(gripConfig.yaw),
+        THREE.MathUtils.degToRad(gripConfig.roll),
+        'YXZ'
+      );
+      gripOffsetQuat.setFromEuler(euler);
+
+      document.getElementById('val-pitch').textContent = `${Math.round(gripConfig.pitch)}°`;
+      document.getElementById('val-roll').textContent = `${Math.round(gripConfig.roll)}°`;
+      document.getElementById('val-yaw').textContent = `${Math.round(gripConfig.yaw)}°`;
+      document.getElementById('slider-pitch').value = gripConfig.pitch;
+      document.getElementById('slider-roll').value = gripConfig.roll;
+      document.getElementById('slider-yaw').value = gripConfig.yaw;
+
+      if (lastEvalData) drawHUD(lastEvalData);
+    }
+    updateGripOffsetQuat();
+
+    ['pitch', 'roll', 'yaw'].forEach(key => {
+      document.getElementById(`slider-${key}`).addEventListener('input', (e) => {
+        gripConfig[key] = Number(e.target.value);
+        updateGripOffsetQuat();
+      });
+    });
+
+    // WebXRコントローラー（0番と1番の両方を監視し、確実に右コントローラーを割り当てる）
+    let rightController = null;
+    let rightGamepad = null;
+    const controllers = [renderer.xr.getController(0), renderer.xr.getController(1)];
+
+    controllers.forEach((ctrl) => {
+      scene.add(ctrl);
+
+      ctrl.addEventListener('connected', (e) => {
+        if (e.data.handedness === 'right') {
+          rightController = ctrl;
+          rightGamepad = e.data.gamepad;
+        } else if (!rightController) {
+          // 右コントローラー未接続時のみフォールバック
+          rightController = ctrl;
+          rightGamepad = e.data.gamepad;
+        }
+      });
+
+      ctrl.addEventListener('disconnected', () => {
+        if (rightController === ctrl) {
+          rightController = null;
+          rightGamepad = null;
+        }
+      });
+
+      ctrl.addEventListener('selectstart', () => {
+        if (renderer.xr.isPresenting && rightController === ctrl) {
+          recenterStage();
+        }
+      });
+    });
 
     const prevGripPos = new THREE.Vector3();
     const prevTipPos = new THREE.Vector3();
@@ -599,7 +850,6 @@
     let prevButtonB = false;
     let swingCooldown = 0;
 
-    // 自分の立ち位置の目の前にエンドラインを再配置する関数
     function recenterStage() {
       const xrCam = renderer.xr.getCamera();
       const camPos = new THREE.Vector3();
@@ -609,7 +859,6 @@
       camDir.y = 0;
       camDir.normalize();
 
-      // カメラの前方38cm、高さは床から76cm（またはカメラ高さ-45cm）にエンドラインを配置
       stage.position.set(
         camPos.x + camDir.x * 0.38,
         0,
@@ -619,109 +868,151 @@
       stage.rotation.set(0, yaw, 0);
     }
 
-    controller.addEventListener('selectstart', () => {
-      if (renderer.xr.isPresenting) recenterStage();
-    });
-
     // 初期ガイド＆HUD生成
     setMode(2);
 
-    // --- 9. メインアニメーションループ（Quest実機トラッキング ＆ 非装着時デモ再生） ---
+    // --- 11. メインアニメーションループ ---
     const clock = new THREE.Clock();
+    let prevDemoPhase = 0;
 
     renderer.setAnimationLoop(() => {
       const dt = Math.min(clock.getDelta(), 0.1);
       const elapsed = clock.getElapsedTime();
       if (swingCooldown > 0) swingCooldown -= dt;
 
-      // ボールの自転アニメーション
-      ballMesh.RotateOnAxis ? ballMesh.rotateOnAxis(new THREE.Vector3(0, 1, 0), dt * 14) : (ballMesh.rotation.y += dt * 14);
+      // 1) インパクト位置のボールと飛球ボールを現在のスピン軸(currentSpinAxis)周りで回転させる
+      const deltaAngle = currentSpinOmega * dt;
+      ballMesh.rotateOnAxis(currentSpinAxis, deltaAngle);
+      flyingBallMesh.rotateOnAxis(currentSpinAxis, deltaAngle);
+
+      // 2) 飛んでいくボールの軌道アニメーション更新
+      if (isBallFlying && trajectorySamples.length > 1) {
+        flightTimer += dt;
+        const maxTime = trajectorySamples[trajectorySamples.length - 1].t;
+        if (flightTimer <= maxTime) {
+          // 現在時刻に対応するサンプル区間を線形補間
+          for (let i = 0; i < trajectorySamples.length - 1; i++) {
+            const s0 = trajectorySamples[i];
+            const s1 = trajectorySamples[i + 1];
+            if (flightTimer >= s0.t && flightTimer <= s1.t) {
+              const ratio = (flightTimer - s0.t) / Math.max(0.0001, s1.t - s0.t);
+              flyingBallGroup.position.lerpVectors(s0.pos, s1.pos, ratio);
+              break;
+            }
+          }
+        } else {
+          // 飛行完了後、少し待ってからインパクト位置へ戻す
+          if (flightTimer > maxTime + 0.35) {
+            flyingBallGroup.position.copy(impactPos);
+            isBallFlying = false;
+          }
+        }
+      }
 
       if (renderer.xr.isPresenting) {
-        // === Meta Quest WebXR モード（実機コントローラー追跡） ===
+        // === Meta Quest WebXR モード（右コントローラー追跡） ===
         const session = renderer.xr.getSession();
-        let gamepad = null;
         if (session && session.inputSources) {
           for (const src of session.inputSources) {
-            if (src.handedness === 'right' || !gamepad) gamepad = src.gamepad;
+            if (src.handedness === 'right') {
+              rightGamepad = src.gamepad;
+            }
           }
         }
 
-        // Aボタンでリセンター、Bボタンでモード切替
-        if (gamepad && gamepad.buttons) {
-          const btnA = gamepad.buttons[4]?.pressed;
-          const btnB = gamepad.buttons[5]?.pressed;
+        // ボタン＆サムスティック操作
+        if (rightGamepad) {
+          const btnA = rightGamepad.buttons[4]?.pressed;
+          const btnB = rightGamepad.buttons[5]?.pressed;
           if (btnA && !prevButtonA) recenterStage();
           if (btnB && !prevButtonB) setMode((currentMode % 4) + 1);
           prevButtonA = !!btnA;
           prevButtonB = !!btnB;
-        }
 
-        // コントローラーの位置・回転をstageローカル座標へ変換してラケットに反映
-        const worldPos = new THREE.Vector3();
-        const worldQuat = new THREE.Quaternion();
-        controller.getWorldPosition(worldPos);
-        controller.getWorldQuaternion(worldQuat);
-
-        stage.worldToLocal(worldPos);
-        const stageQuatInv = stage.quaternion.clone().invert();
-        worldQuat.premultiply(stageQuatInv);
-
-        racketGroup.position.copy(worldPos);
-        racketGroup.quaternion.copy(worldQuat);
-
-        // 先端座標（グリップからローカル -0.18m）
-        const currentTipPos = new THREE.Vector3(-0.18, 0, 0).applyQuaternion(worldQuat).add(worldPos);
-
-        // 2軸リボン軌跡の更新
-        gripTrailPts.shift();
-        gripTrailPts.push(worldPos.clone());
-        gripTrailLine.geometry.setFromPoints(gripTrailPts);
-
-        tipTrailPts.shift();
-        tipTrailPts.push(currentTipPos.clone());
-        tipTrailLine.geometry.setFromPoints(tipTrailPts);
-
-        // 面角度の算出（法線ベクトルと水平面の角度）
-        const normalVec = new THREE.Vector3(0, 0, -1).applyQuaternion(worldQuat);
-        const bladeAngleDeg = 90 - Math.abs(Math.asin(Math.max(-1, Math.min(1, normalVec.y))) * (180 / Math.PI));
-        laserMat.color.setHex(bladeAngleDeg >= 78 ? 0x22c55e : 0xeab308);
-
-        // インパクトリング通過判定
-        if (dt > 0.001 && currentTipPos.distanceTo(impactPos) < 0.085 && swingCooldown <= 0) {
-          const vx = Math.abs(worldPos.x - prevGripPos.x) / dt; // Layer 1: 腕の横速度
-          const vy = Math.max(0, (prevTipPos.y - currentTipPos.y) / dt); // Layer 2: 先端の縦落下速度
-          const vz = Math.abs(currentTipPos.z - prevTipPos.z) / dt; // 前後ブレ速度
-          if (vx + vy > 0.6) {
-            evaluateSwing(vx, vy, vz, bladeAngleDeg, gamepad);
-            swingCooldown = 0.45;
+          // 右サムスティックでラケットの握り角度をリアルタイム微調整
+          const stickX = rightGamepad.axes[2] || 0;
+          const stickY = rightGamepad.axes[3] || 0;
+          if (Math.abs(stickX) > 0.2 || Math.abs(stickY) > 0.2) {
+            gripConfig.roll = THREE.MathUtils.clamp(gripConfig.roll + stickX * 45 * dt, -60, 60);
+            gripConfig.pitch = THREE.MathUtils.clamp(gripConfig.pitch - stickY * 45 * dt, -20, 80);
+            updateGripOffsetQuat();
           }
         }
 
-        prevGripPos.copy(worldPos);
-        prevTipPos.copy(currentTipPos);
+        const activeCtrl = rightController || controllers[1] || controllers[0];
+        if (activeCtrl) {
+          const worldPos = new THREE.Vector3();
+          const worldQuat = new THREE.Quaternion();
+          activeCtrl.getWorldPosition(worldPos);
+          activeCtrl.getWorldQuaternion(worldQuat);
+
+          // stageローカル座標へ変換
+          stage.worldToLocal(worldPos);
+          const stageQuatInv = stage.quaternion.clone().invert();
+          worldQuat.premultiply(stageQuatInv);
+
+          // コントローラーの握り角度補正(gripOffsetQuat)を適用
+          worldQuat.multiply(gripOffsetQuat);
+
+          racketGroup.position.copy(worldPos);
+          racketGroup.quaternion.copy(worldQuat);
+
+          // ラケット先端座標（グリップからローカル -0.185m）
+          const currentTipPos = new THREE.Vector3(-0.185, 0, 0).applyQuaternion(worldQuat).add(worldPos);
+
+          // 2軸リボン軌跡の更新
+          gripTrailPts.shift();
+          gripTrailPts.push(worldPos.clone());
+          gripTrailLine.geometry.setFromPoints(gripTrailPts);
+
+          tipTrailPts.shift();
+          tipTrailPts.push(currentTipPos.clone());
+          tipTrailLine.geometry.setFromPoints(tipTrailPts);
+
+          // 面角度の算出（フォア面・バック面どちらで打っても垂直度を90°基準で算出）
+          const normalVec = new THREE.Vector3(0, 0, -1).applyQuaternion(worldQuat);
+          const bladeAngleDeg = 90 - Math.abs(Math.asin(THREE.MathUtils.clamp(normalVec.y, -1, 1)) * (180 / Math.PI));
+          laserMat.color.setHex(bladeAngleDeg >= 76 ? 0x22c55e : 0xeab308);
+
+          // インパクト判定（ブレード中心または先端がボール付近を通過した瞬間）
+          const currentBladeCenter = new THREE.Vector3(-0.115, 0, 0).applyQuaternion(worldQuat).add(worldPos);
+          const distToBall = Math.min(currentTipPos.distanceTo(impactPos), currentBladeCenter.distanceTo(impactPos));
+
+          if (dt > 0.001 && distToBall < 0.095 && swingCooldown <= 0) {
+            const vx = Math.abs(worldPos.x - prevGripPos.x) / dt; // Layer 1: 腕の横引っ張り速度
+            const vy = Math.abs(prevTipPos.y - currentTipPos.y) / dt; // Layer 2: 先端の縦速度
+            const vz = Math.max(0, (prevTipPos.z - currentTipPos.z) / dt); // 奥(-Z)への前押し速度
+            if (vx + vy + vz > 0.55) {
+              evaluateSwing(vx, vy, vz, bladeAngleDeg, rightGamepad);
+              swingCooldown = 0.40;
+            }
+          }
+
+          prevGripPos.copy(worldPos);
+          prevTipPos.copy(currentTipPos);
+        }
 
       } else {
-        // === PC / スマホ 3Dプレビューモード（自動反復スイングデモ） ===
-        const phase = (elapsed * 0.85) % 1.0; // 0 -> 1 のループ
+        // === PC / スマホ 3Dプレビューモード（自動スイング＆飛球デモ再生） ===
+        const phase = (elapsed * 0.75) % 1.0;
         const x = 0.30 - phase * 0.50;
         let gy = 0.96, gz = 0, wristDropRad = 0, bladeTiltRad = 0;
 
-        if (currentMode === 1) { // ① 基礎: 水平横引き
+        if (currentMode === 1) {
           gy = 0.95;
           wristDropRad = 0;
-        } else if (currentMode === 2) { // ② 完成: 横上ロング
+        } else if (currentMode === 2) {
           gy = 0.98 - phase * 0.04;
-          wristDropRad = -0.35 + phase * 0.95; // 手首を下に強く返す
-        } else if (currentMode === 3) { // ③ 完成: 同軌道・横下
+          wristDropRad = -0.35 + phase * 0.95;
+        } else if (currentMode === 3) {
           const xShort = 0.14 - phase * 0.18;
           racketGroup.position.set(xShort, 1.00 - phase * 0.08, 0);
           wristDropRad = -0.35 + phase * 0.95;
-        } else if (currentMode === 4) { // ④ NG: 前押し＆面開き
+        } else if (currentMode === 4) {
           gy = 0.98 - phase * 0.10;
           gz = -phase * 0.22;
           wristDropRad = -0.1 + phase * 0.4;
-          bladeTiltRad = 0.45; // 面が上を向く
+          bladeTiltRad = 0.48;
         }
 
         if (currentMode !== 3) {
@@ -730,7 +1021,14 @@
         racketGroup.rotation.set(bladeTiltRad, 0, wristDropRad);
         laserMat.color.setHex(currentMode === 4 ? 0xeab308 : 0x22c55e);
 
-        const tipWorld = new THREE.Vector3(-0.18, 0, 0).applyEuler(racketGroup.rotation).add(racketGroup.position);
+        // デモスイングがインパクト位置(phase=0.5付近)を通過したタイミングで飛球を再トリガー
+        if (prevDemoPhase < 0.48 && phase >= 0.48) {
+          flightTimer = 0;
+          isBallFlying = true;
+        }
+        prevDemoPhase = phase;
+
+        const tipWorld = new THREE.Vector3(-0.185, 0, 0).applyEuler(racketGroup.rotation).add(racketGroup.position);
         gripTrailPts.shift();
         gripTrailPts.push(racketGroup.position.clone());
         gripTrailLine.geometry.setFromPoints(gripTrailPts);
